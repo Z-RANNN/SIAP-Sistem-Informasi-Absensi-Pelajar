@@ -11,6 +11,7 @@ import com.nurulislam.siap.model.StatusAbsensi;
 import com.nurulislam.siap.util.SceneManager;
 import com.nurulislam.siap.util.SessionManager;
 import com.nurulislam.siap.util.TanggalUtil;
+import com.nurulislam.siap.util.JamRealtime;
 import com.nurulislam.siap.util.PdfExportUtil;
 import com.nurulislam.siap.util.ProfileMenu;
 import com.nurulislam.siap.util.AvatarUtil;
@@ -62,6 +63,7 @@ public class LaporanMapelController {
     @FXML private Button btnNavLaporan;
     @FXML private StackPane avatarBox;
     @FXML private ImageView imgAvatar;
+    @FXML private Label labelJamRealtime;
     @FXML private ImageView imgLogo;
 
     // --- Top bar ---
@@ -124,6 +126,7 @@ public class LaporanMapelController {
         btnEksporPdf.setOnAction(e -> handleEksporPdf());
         ProfileMenu.pasang(avatarBox, this::bukaProfil, this::handleLogout);
         AvatarUtil.tampilkan(avatarBox, imgAvatar, labelInisialUser);
+        JamRealtime.mulai(labelJamRealtime);
         BrandLogo.pasang(imgLogo);
 
         muatDaftarFilterJadwal();

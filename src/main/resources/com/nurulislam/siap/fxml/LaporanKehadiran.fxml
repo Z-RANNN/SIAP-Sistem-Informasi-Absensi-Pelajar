@@ -76,6 +76,9 @@
                                styleClass="greeting-caption"/>
                     </VBox>
                     <Region HBox.hgrow="ALWAYS"/>
+                    <VBox styleClass="date-chip" alignment="CENTER_LEFT">
+                        <Label fx:id="labelJamRealtime" text="Memuat…" styleClass="date-chip-text"/>
+                    </VBox>
                     <VBox alignment="CENTER_RIGHT" spacing="1">
                         <Label fx:id="labelNamaUser" text="Memuat…" styleClass="user-name"/>
                         <Label fx:id="labelRoleUser" text="" styleClass="user-role"/>

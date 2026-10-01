@@ -17,6 +17,7 @@ import com.google.zxing.Result;
 import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
 import com.google.zxing.common.HybridBinarizer;
 import com.nurulislam.siap.app.Main;
+import com.nurulislam.siap.dao.AbsensiDAO;
 import com.nurulislam.siap.dao.AbsensiMapelDAO;
 import com.nurulislam.siap.dao.AbsensiSudahAdaException;
 import com.nurulislam.siap.dao.JadwalMengajarDAO;
@@ -140,6 +141,7 @@ public class AbsensiMapelController {
 
     private final JadwalMengajarDAO jadwalMengajarDAO = new JadwalMengajarDAO();
     private final AbsensiMapelDAO absensiMapelDAO = new AbsensiMapelDAO();
+    private final AbsensiDAO absensiDAO = new AbsensiDAO();
     private final MuridDAO muridDAO = new MuridDAO();
 
     /*
@@ -706,15 +708,32 @@ public class AbsensiMapelController {
                 return;
             }
 
+            // Kunci anti titip absen: ikuti status absensi harian (gerbang) hari ini.
+            // Bila TU/Admin menetapkan ALFA/IZIN/SAKIT dan belum diubah, scan mapel
+            // otomatis tercatat dengan status yang sama - kartu orang lain yang
+            // di-scan-kan tidak bisa menghasilkan HADIR.
+            LocalDate hariIni = LocalDate.now();
+            StatusAbsensi statusHarian = null;
+            try {
+                statusHarian = absensiDAO.findStatusHarian(murid.getMuridId(), hariIni)
+                        .orElse(null);
+            } catch (SQLException e) {
+                System.err.println("[AbsensiMapelController] Gagal cek status harian: "
+                        + e.getMessage());
+            }
+            boolean terkunciHarian = statusHarian != null
+                    && statusHarian != StatusAbsensi.HADIR
+                    && statusHarian != StatusAbsensi.TERLAMBAT;
+
             LocalTime sekarang = LocalTime.now();
-            StatusAbsensi status = tentukanStatus(sekarang);
+            StatusAbsensi status = terkunciHarian ? statusHarian : tentukanStatus(sekarang);
 
             AbsensiMapel absensi = new AbsensiMapel();
             absensi.setMuridId(murid.getMuridId());
             absensi.setJadwalId(jadwalTerpilih.getJadwalId());
             Pengguna pengguna = SessionManager.getPenggunaAktif();
             absensi.setPenggunaId(pengguna != null ? pengguna.getPenggunaId() : 0);
-            absensi.setTanggal(LocalDate.now());
+            absensi.setTanggal(hariIni);
             absensi.setWaktuScan(sekarang);
             absensi.setStatus(status);
 
@@ -723,6 +742,17 @@ public class AbsensiMapelController {
             tampilkanHasilBerhasil(murid, sekarang, status);
             tambahBarisAbsenMasuk(murid.getNama(), murid.getNis(), sekarang, status);
             perbaruiRekap(status, 1);
+
+            if (terkunciHarian) {
+                Alert terkunci = new Alert(Alert.AlertType.WARNING);
+                terkunci.setTitle("Status Mengikuti Absensi Harian");
+                terkunci.setHeaderText(null);
+                terkunci.setContentText("Status harian " + murid.getNama() + " hari ini adalah "
+                        + capitalisasi(statusHarian.name()) + " (ditetapkan Staf TU), sehingga "
+                        + "scan mata pelajaran ini tercatat " + capitalisasi(statusHarian.name())
+                        + ", bukan Hadir.");
+                terkunci.showAndWait();
+            }
 
         } catch (AbsensiSudahAdaException sudahAda) {
             tampilkanHasilGagal("Sudah Absen", sudahAda.getMessage());
@@ -736,6 +766,13 @@ public class AbsensiMapelController {
     private StatusAbsensi tentukanStatus(LocalTime waktuScan) {
         LocalTime batasTerlambat = jadwalTerpilih.getJamMulai().plusMinutes(TOLERANSI_TERLAMBAT_MENIT);
         return waktuScan.isAfter(batasTerlambat) ? StatusAbsensi.TERLAMBAT : StatusAbsensi.HADIR;
+    }
+
+    private String capitalisasi(String teksEnum) {
+        if (teksEnum == null || teksEnum.isEmpty()) {
+            return "";
+        }
+        return teksEnum.charAt(0) + teksEnum.substring(1).toLowerCase();
     }
 
     private void perbaruiRekap(StatusAbsensi status, int delta) {
@@ -757,12 +794,23 @@ public class AbsensiMapelController {
         labelJamHasil.setText(waktu.format(DateTimeFormatter.ofPattern("HH:mm")) + " WIB");
 
         labelBadgeHasil.getStyleClass().removeAll("status-badge-hadir", "status-badge-terlambat", "status-badge-izin", "status-badge-alfa");
-        if (status == StatusAbsensi.TERLAMBAT) {
-            labelBadgeHasil.setText("TERLAMBAT");
-            labelBadgeHasil.getStyleClass().add("status-badge-terlambat");
-        } else {
-            labelBadgeHasil.setText("HADIR");
-            labelBadgeHasil.getStyleClass().add("status-badge-hadir");
+        switch (status) {
+            case TERLAMBAT -> {
+                labelBadgeHasil.setText("TERLAMBAT");
+                labelBadgeHasil.getStyleClass().add("status-badge-terlambat");
+            }
+            case ALFA -> {
+                labelBadgeHasil.setText("ALFA");
+                labelBadgeHasil.getStyleClass().add("status-badge-alfa");
+            }
+            case IZIN, SAKIT -> {
+                labelBadgeHasil.setText(status.name());
+                labelBadgeHasil.getStyleClass().add("status-badge-izin");
+            }
+            default -> {
+                labelBadgeHasil.setText("HADIR");
+                labelBadgeHasil.getStyleClass().add("status-badge-hadir");
+            }
         }
     }
 

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Data Access Object untuk tabel tb_absensi (absensi harian di gerbang,
@@ -61,8 +62,7 @@ public class AbsensiDAO {
         return absensi;
     }
 
-    /** Riwayat scan hari ini, terbaru di atas. Dipakai panel "Riwayat Scan Hari Ini". */
-    public List<Absensi> findRiwayatHariIni(java.time.LocalDate tanggal) throws SQLException {
+    /** Riwayat scan hari ini, terbaru di atas. Dipakai panel "Riwayat Scan Hari Ini". */    public List<Absensi> findRiwayatHariIni(java.time.LocalDate tanggal) throws SQLException {
         String sql = SELECT_JOIN + "WHERE a.tanggal = ? ORDER BY a.waktu_masuk DESC, a.absensi_id DESC";
         List<Absensi> result = new ArrayList<>();
         try (Connection conn = DatabaseConnection.getConnection();
@@ -94,6 +94,28 @@ public class AbsensiDAO {
             }
         }
         return rekap;
+    }
+
+    /**
+     * Status absensi harian (gerbang) seorang murid pada tanggal tertentu.
+     * Dipakai halaman Absensi Mata Pelajaran sebagai kunci anti titip absen:
+     * bila murid berstatus ALFA/IZIN/SAKIT hari itu, scan mapel otomatis
+     * mengikuti status tersebut (bukan HADIR).
+     */
+    public Optional<StatusAbsensi> findStatusHarian(int muridId, java.time.LocalDate tanggal)
+            throws SQLException {
+        String sql = "SELECT status FROM tb_absensi WHERE murid_id = ? AND tanggal = ? LIMIT 1";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, muridId);
+            ps.setDate(2, Date.valueOf(tanggal));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(StatusAbsensi.valueOf(rs.getString("status")));
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /**
