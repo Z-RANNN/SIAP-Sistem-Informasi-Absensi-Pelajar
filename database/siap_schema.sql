@@ -102,6 +102,7 @@ CREATE TABLE tb_absensi (
     tanggal         DATE NOT NULL,
     waktu_masuk     TIME,
     status          ENUM('HADIR', 'TERLAMBAT', 'IZIN', 'SAKIT', 'ALFA') NOT NULL,
+    otomatis        BOOLEAN NOT NULL DEFAULT FALSE, -- TRUE = ALFA buatan sistem (bisa di-upgrade scan susulan)
     CONSTRAINT fk_absensi_murid FOREIGN KEY (murid_id) REFERENCES tb_murid(murid_id) ON DELETE CASCADE,
     CONSTRAINT fk_absensi_kelas FOREIGN KEY (kelas_id) REFERENCES tb_kelas(kelas_id) ON DELETE RESTRICT,
     CONSTRAINT fk_absensi_sesi FOREIGN KEY (sesi_absensi_id) REFERENCES tb_sesi_absensi(sesi_absensi_id) ON DELETE RESTRICT,

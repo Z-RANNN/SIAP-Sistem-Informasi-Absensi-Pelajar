@@ -196,9 +196,9 @@ public class AbsensiDAO {
         return rekap;
     }
 
-    /** Memperbarui status/waktu absensi dari halaman laporan. */
+    /** Memperbarui status/waktu absensi dari halaman laporan (selalu manual). */
     public void updateFromLaporan(Absensi absensi, int penggunaId) throws SQLException {
-        String sql = "UPDATE tb_absensi SET waktu_masuk = ?, status = ?, pengguna_id = ? WHERE absensi_id = ?";
+        String sql = "UPDATE tb_absensi SET waktu_masuk = ?, status = ?, pengguna_id = ?, otomatis = FALSE WHERE absensi_id = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (absensi.getWaktuMasuk() == null) {
@@ -223,6 +223,98 @@ public class AbsensiDAO {
         }
     }
 
+    /**
+     * Mencari satu baris absensi harian (murid + sesi + tanggal).
+     * Dipakai scan susulan untuk meng-upgrade ALFA otomatis menjadi HADIR.
+     */
+    public Optional<Absensi> findHarian(int muridId, int sesiAbsensiId, java.time.LocalDate tanggal)
+            throws SQLException {
+        String sql = SELECT_JOIN + "WHERE a.murid_id = ? AND a.sesi_absensi_id = ? AND a.tanggal = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, muridId);
+            ps.setInt(2, sesiAbsensiId);
+            ps.setDate(3, Date.valueOf(tanggal));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(mapRow(rs)) : Optional.empty();
+            }
+        }
+    }
+
+    /**
+     * Menandai ALFA otomatis untuk seluruh murid AKTIF yang belum punya catatan
+     * pada rentang tanggal (maksimal sampai hari ini) untuk semua sesi yang ada.
+     * Baris yang sudah ada (scan/TU) tidak disentuh.
+     *
+     * @return jumlah baris baru yang dibuat
+     */
+    public int tandaiAlfaOtomatis(java.time.LocalDate tglMulai, java.time.LocalDate tglAkhir,
+                                   int penggunaId) throws SQLException {
+        java.time.LocalDate hariIni = java.time.LocalDate.now();
+        java.time.LocalDate akhir = tglAkhir.isAfter(hariIni) ? hariIni : tglAkhir;
+        if (akhir.isBefore(tglMulai)) {
+            return 0;
+        }
+
+        List<Integer> daftarSesi = new ArrayList<>();
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT sesi_absensi_id FROM tb_sesi_absensi");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                daftarSesi.add(rs.getInt(1));
+            }
+        }
+        if (daftarSesi.isEmpty()) {
+            return 0;
+        }
+
+        String sql = "INSERT INTO tb_absensi "
+                + "(murid_id, kelas_id, sesi_absensi_id, pengguna_id, tanggal, waktu_masuk, status, otomatis) "
+                + "SELECT m.murid_id, m.kelas_id, ?, ?, ?, NULL, 'ALFA', TRUE "
+                + "FROM tb_murid m "
+                + "WHERE m.status = 'AKTIF' "
+                + "AND NOT EXISTS (SELECT 1 FROM tb_absensi a WHERE a.murid_id = m.murid_id "
+                + "AND a.sesi_absensi_id = ? AND a.tanggal = ?)";
+
+        int total = 0;
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (java.time.LocalDate tanggal = tglMulai;
+                 !tanggal.isAfter(akhir);
+                 tanggal = tanggal.plusDays(1)) {
+                for (int sesiId : daftarSesi) {
+                    ps.setInt(1, sesiId);
+                    ps.setInt(2, penggunaId);
+                    ps.setDate(3, Date.valueOf(tanggal));
+                    ps.setInt(4, sesiId);
+                    ps.setDate(5, Date.valueOf(tanggal));
+                    total += ps.executeUpdate();
+                }
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Meng-upgrade baris ALFA otomatis menjadi status hasil scan susulan.
+     * Penanda otomatis ikut dimatikan sehingga baris menjadi data manual.
+     */
+    public boolean upgradeOtomatisKeHadir(int absensiId, StatusAbsensi statusBaru,
+                                          java.time.LocalTime waktuMasuk, int penggunaId)
+            throws SQLException {
+        String sql = "UPDATE tb_absensi SET status = ?, waktu_masuk = ?, "
+                + "pengguna_id = ?, otomatis = FALSE "
+                + "WHERE absensi_id = ? AND otomatis = TRUE AND status = 'ALFA'";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, statusBaru.name());
+            ps.setTime(2, Time.valueOf(waktuMasuk));
+            ps.setInt(3, penggunaId);
+            ps.setInt(4, absensiId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
     private Absensi mapRow(ResultSet rs) throws SQLException {
         Absensi a = new Absensi();
         a.setAbsensiId(rs.getInt("absensi_id"));
@@ -233,6 +325,12 @@ public class AbsensiDAO {
         a.setTanggal(rs.getDate("tanggal").toLocalDate());
         a.setWaktuMasuk(rs.getTime("waktu_masuk") != null ? rs.getTime("waktu_masuk").toLocalTime() : null);
         a.setStatus(StatusAbsensi.valueOf(rs.getString("status")));
+        try {
+            a.setOtomatis(rs.getBoolean("otomatis"));
+        } catch (SQLException e) {
+            // Kolom otomatis belum ada pada database lama yang belum dimigrasi.
+            a.setOtomatis(false);
+        }
         a.setNamaMurid(rs.getString("nama_murid"));
         a.setNis(rs.getString("nis"));
         a.setNamaKelas(rs.getString("nama_kelas"));

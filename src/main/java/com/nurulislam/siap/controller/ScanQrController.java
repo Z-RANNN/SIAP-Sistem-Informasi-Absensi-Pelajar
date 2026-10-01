@@ -529,7 +529,9 @@ public class ScanQrController {
             perbaruiRekap(status, 1);
 
         } catch (AbsensiSudahAdaException sudahAda) {
-            tampilkanHasilGagal("Sudah Absen", "Murid ini sudah tercatat absen untuk sesi hari ini.");
+            if (!cobaUpgradeAlfaOtomatis(kodeMentah)) {
+                tampilkanHasilGagal("Sudah Absen", "Murid ini sudah tercatat absen untuk sesi hari ini.");
+            }
         } catch (SQLException sql) {
             tampilkanHasilGagal("Gagal Menyimpan", "Terjadi kendala koneksi database.");
             System.err.println("[ScanQrController] SQLException: " + sql.getMessage());
@@ -537,11 +539,62 @@ public class ScanQrController {
     }
 
     /**
+     * Scan susulan: bila murid sudah punya baris ALFA otomatis hari ini
+     * (dibuat sistem karena belum absen), upgrade baris itu menjadi status
+     * hasil scan (HADIR/TERLAMBAT) alih-alih menolak dengan "Sudah Absen".
+     * Baris ALFA manual TU tidak ikut di-upgrade.
+     *
+     * @return true bila upgrade berhasil (hasil sudah ditampilkan)
+     */
+    private boolean cobaUpgradeAlfaOtomatis(String kodeMentah) {
+        try {
+            Optional<Murid> muridOpt = muridDAO.findByQrToken(kodeMentah);
+            if (muridOpt.isEmpty()) {
+                muridOpt = muridDAO.findByNis(kodeMentah);
+            }
+            if (muridOpt.isEmpty()) {
+                return false;
+            }
+            Murid murid = muridOpt.get();
+            LocalTime sekarang = LocalTime.now();
+            List<Sesiabsensi> semuaSesi = sesiAbsensiDAO.findAll();
+            if (semuaSesi.isEmpty()) {
+                return false;
+            }
+            Sesiabsensi sesi = pilihSesiUntukWaktu(sekarang, semuaSesi);
+            if (sekarang.isBefore(sesi.getJamMasuk())) {
+                return false;
+            }
+            Optional<Absensi> ada = absensiDAO.findHarian(
+                    murid.getMuridId(), sesi.getSesiAbsensiId(), LocalDate.now());
+            if (ada.isEmpty() || !ada.get().isOtomatis()
+                    || ada.get().getStatus() != StatusAbsensi.ALFA) {
+                return false;
+            }
+
+            StatusAbsensi status = sesi.tentukanStatus(sekarang);
+            Pengguna pengguna = SessionManager.getPenggunaAktif();
+            int penggunaId = pengguna != null ? pengguna.getPenggunaId() : 0;
+            boolean ok = absensiDAO.upgradeOtomatisKeHadir(
+                    ada.get().getAbsensiId(), status, sekarang, penggunaId);
+            if (!ok) {
+                return false;
+            }
+            tampilkanHasilBerhasil(murid, sekarang, status);
+            tambahRiwayatBerhasil(murid, sekarang, status);
+            perbaruiRekap(status, 1);
+            return true;
+        } catch (SQLException e) {
+            System.err.println("[ScanQrController] Gagal upgrade ALFA otomatis: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Memilih sesi terakhir yang sudah dimulai.
      * Contoh Sesi Pagi: 06:30-08:00.
      * Scan pukul 10:18 tetap memilih Sesi Pagi sehingga status menjadi TERLAMBAT.
-     */
-    private Sesiabsensi pilihSesiUntukWaktu(LocalTime waktu, List<Sesiabsensi> daftarSesi) {
+     */    private Sesiabsensi pilihSesiUntukWaktu(LocalTime waktu, List<Sesiabsensi> daftarSesi) {
         Sesiabsensi terpilih = null;
 
         for (Sesiabsensi sesi : daftarSesi) {

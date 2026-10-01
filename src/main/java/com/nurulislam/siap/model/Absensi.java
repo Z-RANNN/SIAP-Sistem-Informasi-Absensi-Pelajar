@@ -20,6 +20,12 @@ public class Absensi {
     private LocalDate tanggal;
     private LocalTime waktuMasuk;
     private StatusAbsensi status;
+    /**
+     * TRUE bila baris ini dibuat otomatis oleh sistem (ALFA otomatis untuk
+     * murid yang belum absen). Baris otomatis boleh di-upgrade oleh scan
+     * susulan; baris manual (FALSE) tidak.
+     */
+    private boolean otomatis;
 
     private String namaMurid;
     private String nis;
@@ -91,6 +97,14 @@ public class Absensi {
 
     public void setStatus(StatusAbsensi status) {
         this.status = status;
+    }
+
+    public boolean isOtomatis() {
+        return otomatis;
+    }
+
+    public void setOtomatis(boolean otomatis) {
+        this.otomatis = otomatis;
     }
 
     public String getNamaMurid() {

@@ -536,6 +536,13 @@ public class LaporanKehadiranController {
         Integer kelasId = kelasDipilih != null ? kelasDipilih.getKelasId() : null;
 
         try {
+            // Murid aktif yang belum tercatat otomatis ditandai ALFA supaya
+            // laporan selalu lengkap walau tidak ada yang scan hari itu.
+            Pengguna sesi = SessionManager.getPenggunaAktif();
+            if (sesi != null && sesi.getPenggunaId() != null) {
+                absensiDAO.tandaiAlfaOtomatis(tglMulai, tglAkhir, sesi.getPenggunaId());
+            }
+
             hasilFilter.setAll(absensiDAO.findFiltered(tglMulai, tglAkhir, kelasId, statusDipilih, null));
             terapkanPencarian();
 
