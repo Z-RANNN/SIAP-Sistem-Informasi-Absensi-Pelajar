@@ -421,7 +421,7 @@ public class DataKelasDetailController {
             labelStatus.setText(
                     murid.isEmpty()
                             ? "Belum ada murid pada kelas ini."
-                            : "Data murid berhasil dimuat."
+                            : ""
             );
 
             fieldPencarian.clear();
