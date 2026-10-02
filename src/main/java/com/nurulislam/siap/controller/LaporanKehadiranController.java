@@ -419,6 +419,8 @@ public class LaporanKehadiranController {
             }
         });
 
+        // Kolom mengisi penuh lebar tabel sehingga tidak ada kolom hantu / scroll horizontal.
+        tabelLaporan.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         tabelLaporan.setItems(dataTampil);
         tabelLaporan.setPlaceholder(new Label("Tidak ada data untuk filter yang dipilih."));
     }
@@ -505,6 +507,8 @@ public class LaporanKehadiranController {
             }
         });
 
+        // Kolom mengisi penuh lebar tabel sehingga tidak ada kolom hantu / scroll horizontal.
+        tabelLaporanMapel.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         tabelLaporanMapel.setItems(dataTampilMapel);
         tabelLaporanMapel.setPlaceholder(new Label(
                 "Tidak ada data absensi mata pelajaran untuk filter yang dipilih."));
