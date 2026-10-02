@@ -23,11 +23,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.image.ImageView;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.layout.HBox;
-import javafx.geometry.Pos;
-import javafx.geometry.Insets;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Priority;
 import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 
@@ -35,13 +30,11 @@ import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Controller untuk halaman "Laporan" versi akun Guru: rekap absensi mata
@@ -106,7 +99,6 @@ public class LaporanMapelController {
     @FXML private TableColumn<AbsensiMapel, String> kolomStatus;
     @FXML private TableColumn<AbsensiMapel, String> kolomWaktuScan;
     @FXML private TableColumn<AbsensiMapel, String> kolomStatusSiswa;
-    @FXML private TableColumn<AbsensiMapel, Void> kolomAksi;
 
     private final AbsensiMapelDAO absensiMapelDAO = new AbsensiMapelDAO();
     private final JadwalMengajarDAO jadwalMengajarDAO = new JadwalMengajarDAO();
@@ -338,41 +330,6 @@ public class LaporanMapelController {
             }
         });
 
-        kolomAksi.setCellFactory(col -> new TableCell<>() {
-            private final Button btnUbah = new Button("Ubah");
-            private final Button btnHapus = new Button("Hapus");
-            private final HBox box = new HBox(6, btnUbah, btnHapus);
-
-            {
-                btnUbah.getStyleClass().add("laporan-btn-ubah");
-                btnHapus.getStyleClass().add("laporan-btn-hapus");
-                box.setAlignment(Pos.CENTER);
-                btnUbah.setOnAction(e -> {
-                    AbsensiMapel row = barisIni();
-                    handleUbahMapel(row);
-                });
-                btnHapus.setOnAction(e -> {
-                    AbsensiMapel row = barisIni();
-                    handleHapusMapel(row);
-                });
-            }
-
-            private AbsensiMapel barisIni() {
-                int idx = getIndex();
-                if (idx < 0 || idx >= getTableView().getItems().size()) {
-                    return null;
-                }
-                return getTableView().getItems().get(idx);
-            }
-
-            @Override
-            protected void updateItem(Void item, boolean kosong) {
-                super.updateItem(item, kosong);
-                setText(null);
-                setGraphic(kosong ? null : box);
-            }
-        });
-
         // Kolom mengisi penuh lebar tabel sehingga tidak ada kolom hantu di kanan.
         tabelLaporan.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         tabelLaporan.setItems(dataTampil);
@@ -409,6 +366,14 @@ public class LaporanMapelController {
         Integer mapelId = mapelDipilih != null ? mapelDipilih.getMapelId() : null;
 
         try {
+            // Sesi yang sudah lewat tanpa catatan otomatis ditandai ALFA supaya
+            // laporan selalu lengkap (sama seperti ALFA otomatis harian).
+            Pengguna sesi = SessionManager.getPenggunaAktif();
+            if (sesi != null && sesi.getPenggunaId() != null) {
+                absensiMapelDAO.tandaiAlfaOtomatisMapel(tglMulai, tglAkhir,
+                        jadwalMengajarDAO.findAllDetail(), sesi.getPenggunaId());
+            }
+
             hasilFilter.setAll(absensiMapelDAO.findFiltered(
                     tglMulai, tglAkhir, kelasId, mapelId, guruId, statusDipilih, null));
             terapkanPencarian();
@@ -514,136 +479,4 @@ public class LaporanMapelController {
         }
         return teksEnum.charAt(0) + teksEnum.substring(1).toLowerCase();
     }
-
-    // ================= Aksi data laporan =================
-
-    private int penggunaAktifId() {
-        Pengguna pengguna = SessionManager.getPenggunaAktif();
-        return pengguna != null ? pengguna.getPenggunaId() : 0;
-    }
-
-    private LocalTime parseWaktu(String teks) {
-        if (teks == null || teks.isBlank()) {
-            return null;
-        }
-        return LocalTime.parse(
-                teks.trim(),
-                DateTimeFormatter.ofPattern("HH.mm")
-        );
-    }
-
-    private Optional<StatusWaktu> tampilkanDialogKoreksi(String judul, StatusAbsensi statusAwal, LocalTime waktuAwal) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(judul);
-        dialog.setHeaderText("Koreksi status dan waktu absensi");
-
-        ComboBox<StatusAbsensi> comboStatus = new ComboBox<>(
-                FXCollections.observableArrayList(StatusAbsensi.values()));
-        comboStatus.setConverter(new StringConverter<>() {
-            @Override public String toString(StatusAbsensi s) { return s == null ? "" : capitalisasi(s.name()); }
-            @Override public StatusAbsensi fromString(String s) { return null; }
-        });
-        comboStatus.setValue(statusAwal);
-        comboStatus.setMaxWidth(Double.MAX_VALUE);
-
-        TextField fieldWaktu = new TextField(waktuAwal != null ? waktuAwal.format(FORMAT_JAM) : "");
-        fieldWaktu.setPromptText("HH.mm");
-        fieldWaktu.setMaxWidth(Double.MAX_VALUE);
-
-        Label hint = new Label("Untuk status Alfa, waktu scan boleh dikosongkan. Format waktu: HH.mm, contoh 07.15.");
-        hint.getStyleClass().add("greeting-caption");
-        hint.setWrapText(true);
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(12));
-        grid.add(new Label("Status"), 0, 0);
-        grid.add(comboStatus, 1, 0);
-        grid.add(new Label("Waktu Scan"), 0, 1);
-        grid.add(fieldWaktu, 1, 1);
-        grid.add(hint, 1, 2);
-        GridPane.setHgrow(comboStatus, Priority.ALWAYS);
-        GridPane.setHgrow(fieldWaktu, Priority.ALWAYS);
-
-        dialog.getDialogPane().setContent(grid);
-        ButtonType simpan = new ButtonType("Simpan", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(simpan, ButtonType.CANCEL);
-
-        dialog.setResultConverter(button -> button == simpan ? simpan : null);
-
-        while (true) {
-            Optional<ButtonType> hasil = dialog.showAndWait();
-            if (hasil.isEmpty() || hasil.get() != simpan) {
-                return Optional.empty();
-            }
-
-            StatusAbsensi status = comboStatus.getValue();
-            if (status == null) {
-                tampilkanPeringatan("Status belum dipilih.");
-                continue;
-            }
-
-            try {
-                LocalTime waktu = parseWaktu(fieldWaktu.getText());
-                if (status != StatusAbsensi.ALFA && waktu == null) {
-                    tampilkanPeringatan("Waktu scan wajib diisi untuk status " + capitalisasi(status.name()) + ".");
-                    continue;
-                }
-                return Optional.of(new StatusWaktu(status, waktu));
-            } catch (RuntimeException ex) {
-                tampilkanPeringatan("Format waktu tidak valid. Gunakan HH.mm, contoh 10.18.");
-            }
-        }
-    }
-
-    private void tampilkanPeringatan(String pesan) {
-        Alert alert = new Alert(Alert.AlertType.WARNING);
-        alert.setTitle("Validasi Data");
-        alert.setHeaderText(null);
-        alert.setContentText(pesan);
-        alert.showAndWait();
-    }
-
-    private void handleUbahMapel(AbsensiMapel row) {
-        if (row == null) return;
-        Optional<StatusWaktu> koreksi = tampilkanDialogKoreksi(
-                "Ubah Absensi Mapel - " + row.getNamaMurid(), row.getStatus(), row.getWaktuScan());
-        if (koreksi.isEmpty()) return;
-
-        try {
-            row.setStatus(koreksi.get().status());
-            row.setWaktuScan(koreksi.get().waktu());
-            absensiMapelDAO.updateFromLaporan(row, penggunaAktifId());
-            errorLabel.setText("Data absensi " + row.getNamaMurid() + " berhasil diperbarui.");
-            muatData();
-        } catch (SQLException e) {
-            errorLabel.setText("Gagal memperbarui data absensi mata pelajaran.");
-            System.err.println("[LaporanMapelController] SQLException (ubah mapel): " + e.getMessage());
-        }
-    }
-
-    private void handleHapusMapel(AbsensiMapel row) {
-        if (row == null) return;
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Hapus Absensi Mata Pelajaran");
-        alert.setHeaderText("Hapus data absensi?");
-        alert.setContentText("Data absensi " + row.getNamaMurid() + " untuk "
-                + (row.getNamaMapel() != null ? row.getNamaMapel() : "mata pelajaran ini")
-                + " pada " + (row.getTanggal() != null ? row.getTanggal().format(FORMAT_TANGGAL) : "tanggal ini")
-                + " akan dihapus dari database.");
-        Optional<ButtonType> jawaban = alert.showAndWait();
-        if (jawaban.isEmpty() || jawaban.get() != ButtonType.OK) return;
-
-        try {
-            absensiMapelDAO.deleteById(row.getAbsensiMapelId());
-            errorLabel.setText("Data absensi " + row.getNamaMurid() + " berhasil dihapus.");
-            muatData();
-        } catch (SQLException e) {
-            errorLabel.setText("Gagal menghapus data absensi mata pelajaran.");
-            System.err.println("[LaporanMapelController] SQLException (hapus mapel): " + e.getMessage());
-        }
-    }
-
-    private record StatusWaktu(StatusAbsensi status, LocalTime waktu) { }
 }

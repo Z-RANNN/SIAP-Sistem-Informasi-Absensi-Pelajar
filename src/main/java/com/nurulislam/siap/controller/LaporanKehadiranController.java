@@ -3,6 +3,7 @@ package com.nurulislam.siap.controller;
 import com.nurulislam.siap.app.Main;
 import com.nurulislam.siap.dao.AbsensiDAO;
 import com.nurulislam.siap.dao.AbsensiMapelDAO;
+import com.nurulislam.siap.dao.JadwalMengajarDAO;
 import com.nurulislam.siap.dao.KelasDAO;
 import com.nurulislam.siap.dao.MataPelajaranDAO;
 import com.nurulislam.siap.model.Absensi;
@@ -147,6 +148,7 @@ public class LaporanKehadiranController {
 
     private final AbsensiDAO absensiDAO = new AbsensiDAO();
     private final AbsensiMapelDAO absensiMapelDAO = new AbsensiMapelDAO();
+    private final JadwalMengajarDAO jadwalMengajarDAO = new JadwalMengajarDAO();
     private final KelasDAO kelasDAO = new KelasDAO();
     private final MataPelajaranDAO mataPelajaranDAO = new MataPelajaranDAO();
 
@@ -591,6 +593,13 @@ public class LaporanKehadiranController {
         try {
             Pengguna pengguna = SessionManager.getPenggunaAktif();
             boolean guru = pengguna != null && pengguna.getRole() == Role.GURU;
+
+            // Sesi yang sudah lewat tanpa catatan otomatis ditandai ALFA supaya
+            // laporan mapel selalu lengkap (sama seperti ALFA otomatis harian).
+            if (pengguna != null && pengguna.getPenggunaId() != null) {
+                absensiMapelDAO.tandaiAlfaOtomatisMapel(tglMulai, tglAkhir,
+                        jadwalMengajarDAO.findAllDetail(), pengguna.getPenggunaId());
+            }
 
             if (guru) {
                 hasilFilterMapel.setAll(

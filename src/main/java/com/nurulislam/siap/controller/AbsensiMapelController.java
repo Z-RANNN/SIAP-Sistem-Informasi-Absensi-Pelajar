@@ -755,7 +755,9 @@ public class AbsensiMapelController {
             }
 
         } catch (AbsensiSudahAdaException sudahAda) {
-            tampilkanHasilGagal("Sudah Absen", sudahAda.getMessage());
+            if (!cobaUpgradeAlfaOtomatis(kodeMentah)) {
+                tampilkanHasilGagal("Sudah Absen", sudahAda.getMessage());
+            }
         } catch (SQLException sql) {
             tampilkanHasilGagal("Gagal Menyimpan", "Terjadi kendala koneksi database.");
             System.err.println("[AbsensiMapelController] SQLException: " + sql.getMessage());
@@ -773,6 +775,59 @@ public class AbsensiMapelController {
             return "";
         }
         return teksEnum.charAt(0) + teksEnum.substring(1).toLowerCase();
+    }
+
+    /**
+     * Scan susulan: bila murid sudah punya baris ALFA otomatis pada jadwal
+     * hari ini, upgrade baris itu menjadi status hasil scan alih-alih
+     * menolak dengan "Sudah Absen". Baris ALFA manual tidak ikut di-upgrade.
+     *
+     * @return true bila upgrade berhasil (hasil sudah ditampilkan)
+     */
+    private boolean cobaUpgradeAlfaOtomatis(String kodeMentah) {
+        try {
+            Optional<Murid> muridOpt = muridDAO.findByQrToken(kodeMentah);
+            if (muridOpt.isEmpty()) {
+                muridOpt = muridDAO.findByNis(kodeMentah);
+            }
+            if (muridOpt.isEmpty() || jadwalTerpilih == null) {
+                return false;
+            }
+            Murid murid = muridOpt.get();
+            Optional<AbsensiMapel> ada = absensiMapelDAO.findByMuridJadwalTanggal(
+                    murid.getMuridId(), jadwalTerpilih.getJadwalId(), LocalDate.now());
+            if (ada.isEmpty() || !ada.get().isOtomatis()
+                    || ada.get().getStatus() != StatusAbsensi.ALFA) {
+                return false;
+            }
+
+            LocalTime sekarang = LocalTime.now();
+            StatusAbsensi status = tentukanStatus(sekarang);
+            Pengguna pengguna = SessionManager.getPenggunaAktif();
+            boolean ok = absensiMapelDAO.upgradeOtomatis(ada.get().getAbsensiMapelId(),
+                    status, sekarang, pengguna != null ? pengguna.getPenggunaId() : 0);
+            if (!ok) {
+                return false;
+            }
+            tampilkanHasilBerhasil(murid, sekarang, status);
+            tambahBarisAbsenMasuk(murid.getNama(), murid.getNis(), sekarang, status);
+            perbaruiRekap(status, 1);
+            kurangiRekapAlfa();
+            return true;
+        } catch (SQLException e) {
+            System.err.println("[AbsensiMapelController] Gagal upgrade ALFA otomatis: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Satu baris ALFA otomatis berubah menjadi kehadiran: koreksi angka rekap. */
+    private void kurangiRekapAlfa() {
+        try {
+            int alfa = Integer.parseInt(labelRekapAlfa.getText());
+            labelRekapAlfa.setText(String.valueOf(Math.max(0, alfa - 1)));
+        } catch (NumberFormatException e) {
+            System.err.println("[AbsensiMapelController] Gagal koreksi rekap Alfa: " + e.getMessage());
+        }
     }
 
     private void perbaruiRekap(StatusAbsensi status, int delta) {

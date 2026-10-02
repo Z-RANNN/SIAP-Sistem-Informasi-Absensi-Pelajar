@@ -57,6 +57,10 @@ oranye `#ffe9df`, merah `#ffdad6`.
 - Jam: `HH:mm`. Sapaan/tanggal panjang: `d MMMM yyyy` locale `id-ID`.
 - Input jam manual tetap memakai `HH.mm` sesuai hint di dialognya.
 - DatePicker selalu lewat `TanggalUtil` (`dd-MM-yyyy`, prompt `tt-bb-tttt`).
+- ALFA otomatis: murid AKTIF tanpa catatan → ALFA `otomatis=TRUE` (harian saat
+  laporan dibuka; mapel saat laporan dibuka untuk sesi yang sudah lewat dan
+  cocok harinya). Scan susulan meng-upgrade baris otomatis; baris manual tidak.
+- Laporan guru read-only: tanpa kolom Aksi (Ubah/Hapus hanya di TU).
 
 ## 6. Polish global (otomatis via `style.css`)
 

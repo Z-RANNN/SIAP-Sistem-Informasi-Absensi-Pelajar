@@ -33,6 +33,11 @@ public class AbsensiMapel {
     private String namaMapel;
     private String namaGuru;
     private String statusMurid;
+    /**
+     * TRUE bila baris ini dibuat otomatis oleh sistem (ALFA otomatis untuk
+     * murid yang belum absen sampai sesi selesai). Boleh di-upgrade scan susulan.
+     */
+    private boolean otomatis;
 
     public AbsensiMapel() {
     }
@@ -139,5 +144,13 @@ public class AbsensiMapel {
 
     public void setStatusMurid(String statusMurid) {
         this.statusMurid = statusMurid;
+    }
+
+    public boolean isOtomatis() {
+        return otomatis;
+    }
+
+    public void setOtomatis(boolean otomatis) {
+        this.otomatis = otomatis;
     }
 }

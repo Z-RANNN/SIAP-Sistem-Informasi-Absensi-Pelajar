@@ -159,6 +159,7 @@ CREATE TABLE tb_absensi_mapel (
     tanggal          DATE NOT NULL,
     waktu_scan       TIME,
     status           ENUM('HADIR', 'TERLAMBAT', 'IZIN', 'SAKIT', 'ALFA') NOT NULL,
+    otomatis        BOOLEAN NOT NULL DEFAULT FALSE, -- TRUE = ALFA buatan sistem (bisa di-upgrade scan susulan)
     CONSTRAINT fk_absensimapel_murid FOREIGN KEY (murid_id) REFERENCES tb_murid(murid_id) ON DELETE CASCADE,
     CONSTRAINT fk_absensimapel_jadwal FOREIGN KEY (jadwal_id) REFERENCES tb_jadwal_mengajar(jadwal_id) ON DELETE RESTRICT,
     CONSTRAINT fk_absensimapel_pengguna FOREIGN KEY (pengguna_id) REFERENCES tb_pengguna(pengguna_id) ON DELETE RESTRICT,

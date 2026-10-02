@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Data Access Object untuk tabel tb_absensi_mapel (absensi per mata pelajaran,
@@ -314,9 +315,9 @@ public class AbsensiMapelDAO {
         return rekap;
     }
 
-    /** Memperbarui status/waktu absensi mata pelajaran dari halaman laporan. */
+    /** Memperbarui status/waktu absensi mata pelajaran dari halaman laporan (selalu manual). */
     public void updateFromLaporan(AbsensiMapel absensi, int penggunaId) throws SQLException {
-        String sql = "UPDATE tb_absensi_mapel SET waktu_scan = ?, status = ?, pengguna_id = ? WHERE absensi_mapel_id = ?";
+        String sql = "UPDATE tb_absensi_mapel SET waktu_scan = ?, status = ?, pengguna_id = ?, otomatis = FALSE WHERE absensi_mapel_id = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             if (absensi.getWaktuScan() == null) {
@@ -361,7 +362,132 @@ public class AbsensiMapelDAO {
         a.setStatus(StatusAbsensi.valueOf(rs.getString("status")));
         a.setNamaMurid(rs.getString("nama_murid"));
         a.setNis(rs.getString("nis"));
+        try {
+            a.setOtomatis(rs.getBoolean("otomatis"));
+        } catch (SQLException e) {
+            a.setOtomatis(false);
+        }
         return a;
+    }
+
+    /**
+     * Mencari satu baris absensi mapel (murid + jadwal + tanggal).
+     * Dipakai scan susulan untuk meng-upgrade ALFA otomatis.
+     */
+    public Optional<AbsensiMapel> findByMuridJadwalTanggal(int muridId, int jadwalId, LocalDate tanggal)
+            throws SQLException {
+        String sql = "SELECT am.*, m.nama AS nama_murid, m.nis AS nis "
+                + "FROM tb_absensi_mapel am JOIN tb_murid m ON am.murid_id = m.murid_id "
+                + "WHERE am.murid_id = ? AND am.jadwal_id = ? AND am.tanggal = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, muridId);
+            ps.setInt(2, jadwalId);
+            ps.setDate(3, Date.valueOf(tanggal));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return Optional.empty();
+                }
+                AbsensiMapel a = new AbsensiMapel();
+                a.setAbsensiMapelId(rs.getInt("absensi_mapel_id"));
+                a.setMuridId(rs.getInt("murid_id"));
+                a.setJadwalId(rs.getInt("jadwal_id"));
+                a.setPenggunaId(rs.getInt("pengguna_id"));
+                a.setTanggal(rs.getDate("tanggal").toLocalDate());
+                a.setWaktuScan(rs.getTime("waktu_scan") != null
+                        ? rs.getTime("waktu_scan").toLocalTime() : null);
+                a.setStatus(StatusAbsensi.valueOf(rs.getString("status")));
+                a.setNamaMurid(rs.getString("nama_murid"));
+                a.setNis(rs.getString("nis"));
+                try {
+                    a.setOtomatis(rs.getBoolean("otomatis"));
+                } catch (SQLException e) {
+                    a.setOtomatis(false);
+                }
+                return Optional.of(a);
+            }
+        }
+    }
+
+    /**
+     * Menandai ALFA otomatis untuk murid AKTIF yang belum punya catatan pada
+     * sesi-sesi yang sudah lewat (sesi hari ini yang jam_selesai-nya sudah
+     * terlewati + seluruh sesi pada tanggal lampau, cocok hari jadwalnya).
+     *
+     * @return jumlah baris baru yang dibuat
+     */
+    public int tandaiAlfaOtomatisMapel(java.time.LocalDate tglMulai, java.time.LocalDate tglAkhir,
+                                       List<com.nurulislam.siap.model.JadwalMengajar> semuaJadwal,
+                                       int penggunaId) throws SQLException {
+        java.time.LocalDate hariIni = java.time.LocalDate.now();
+        java.time.LocalDate akhir = tglAkhir.isAfter(hariIni) ? hariIni : tglAkhir;
+        if (akhir.isBefore(tglMulai)) {
+            return 0;
+        }
+
+        String sql = "INSERT INTO tb_absensi_mapel "
+                + "(murid_id, jadwal_id, pengguna_id, tanggal, waktu_scan, status, otomatis) "
+                + "SELECT m.murid_id, ?, ?, ?, NULL, 'ALFA', TRUE "
+                + "FROM tb_murid m "
+                + "WHERE m.status = 'AKTIF' AND m.kelas_id = ? "
+                + "AND NOT EXISTS (SELECT 1 FROM tb_absensi_mapel am WHERE am.murid_id = m.murid_id "
+                + "AND am.jadwal_id = ? AND am.tanggal = ?)";
+
+        int total = 0;
+        java.time.LocalTime sekarang = java.time.LocalTime.now();
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (java.time.LocalDate tanggal = tglMulai;
+                 !tanggal.isAfter(akhir);
+                 tanggal = tanggal.plusDays(1)) {
+                com.nurulislam.siap.model.HariMengajar hari =
+                        com.nurulislam.siap.model.HariMengajar.dariDayOfWeek(tanggal.getDayOfWeek());
+                if (hari == null) {
+                    continue; // Minggu: tidak ada jadwal.
+                }
+                boolean tanggalLampau = tanggal.isBefore(hariIni);
+                for (com.nurulislam.siap.model.JadwalMengajar jadwal : semuaJadwal) {
+                    if (jadwal.getHari() != hari) {
+                        continue;
+                    }
+                    if (jadwal.getJamSelesai() == null) {
+                        continue;
+                    }
+                    // Hari ini: hanya sesi yang sudah selesai. Tanggal lampau: semua sesi.
+                    if (!tanggalLampau && !sekarang.isAfter(jadwal.getJamSelesai())) {
+                        continue;
+                    }
+                    ps.setInt(1, jadwal.getJadwalId());
+                    ps.setInt(2, penggunaId);
+                    ps.setDate(3, Date.valueOf(tanggal));
+                    ps.setInt(4, jadwal.getKelasId());
+                    ps.setInt(5, jadwal.getJadwalId());
+                    ps.setDate(6, Date.valueOf(tanggal));
+                    total += ps.executeUpdate();
+                }
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Meng-upgrade baris ALFA otomatis menjadi status hasil scan susulan.
+     * Penanda otomatis ikut dimatikan sehingga baris menjadi data manual.
+     */
+    public boolean upgradeOtomatis(int absensiMapelId, StatusAbsensi statusBaru,
+                                   java.time.LocalTime waktuScan, int penggunaId)
+            throws SQLException {
+        String sql = "UPDATE tb_absensi_mapel SET status = ?, waktu_scan = ?, "
+                + "pengguna_id = ?, otomatis = FALSE "
+                + "WHERE absensi_mapel_id = ? AND otomatis = TRUE AND status = 'ALFA'";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, statusBaru.name());
+            ps.setTime(2, Time.valueOf(waktuScan));
+            ps.setInt(3, penggunaId);
+            ps.setInt(4, absensiMapelId);
+            return ps.executeUpdate() > 0;
+        }
     }
 
     /**

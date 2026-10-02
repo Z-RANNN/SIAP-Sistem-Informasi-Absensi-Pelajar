@@ -182,7 +182,6 @@
                             <TableColumn fx:id="kolomStatus" text="Status" prefWidth="110"/>
                             <TableColumn fx:id="kolomWaktuScan" text="Waktu Scan" prefWidth="110"/>
                             <TableColumn fx:id="kolomStatusSiswa" text="Status Siswa" prefWidth="105"/>
-                            <TableColumn fx:id="kolomAksi" text="Aksi" prefWidth="145"/>
                         </columns>
                     </TableView>
                 </VBox>
